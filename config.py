@@ -11,4 +11,24 @@ class Config:
     # Collection settings
     COLLECTION_NAME = "knowledge_base"
     VECTOR_SIZE = 1536
-    # ... rest of config
+    DISTANCE_METRIC = "Cosine"
+
+    # Chunking settings
+    CHUNK_SIZE = 512
+    CHUNK_OVERLAP = 50
+
+    # Retrieval settings
+    TOP_K = 5
+    SIMILARITY_THRESHOLD = 0.7
+
+    # Model settings
+    EMBEDDING_MODEL = "text-embedding-ada-002"
+    LLM_MODEL = "gpt-4o-mini"
+    TEMPERATURE = 0.1
+
+    # Paths
+    DOCUMENTS_DIR = "data/documents"
+    METADATA_DIR = "data/metadata"
+
+# Create an instance to import
+config = Config()
