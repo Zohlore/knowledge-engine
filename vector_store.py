@@ -25,12 +25,14 @@ class VectorStore:
         self._init_collection()
         logger.info(f"VectorStore initialized: {self.collection_name}")
     
-    def _init_collection(self):
+def _init_collection(self):
+    try:
+        self.client.get_collection(self.collection_name)
+        logger.info(f"Collection {self.collection_name} exists")
+    except Exception as e:
+        logger.warning(f"Collection not found or connection error: {e}")
         try:
-            info = self.client.get_collection(self.collection_name)
-            logger.info(f"Collection {self.collection_name} exists with {info.points_count} points")
-        except Exception:
-            logger.info(f"Creating collection {self.collection_name} with vector size {self.vector_size}")
+            logger.info(f"Creating collection {self.collection_name}")
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(
@@ -38,11 +40,15 @@ class VectorStore:
                     distance=Distance.COSINE
                 )
             )
+            # Create index
             self.client.create_payload_index(
                 collection_name=self.collection_name,
                 field_name="document_id",
                 field_type="keyword"
             )
+        except Exception as create_error:
+            logger.error(f"Failed to create collection: {create_error}")
+            raise
     
     def upsert_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]]) -> bool:
         if not chunks or not embeddings:
