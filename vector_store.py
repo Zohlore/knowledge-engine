@@ -15,6 +15,7 @@ from models import DocumentChunk, RetrievedChunk
 
 class VectorStore:
     def __init__(self):
+        # Connect to Qdrant (cloud or local)
         self.client = QdrantClient(
             url=config.QDRANT_URL,
             api_key=config.QDRANT_API_KEY,
@@ -25,30 +26,33 @@ class VectorStore:
         self._init_collection()
         logger.info(f"VectorStore initialized: {self.collection_name}")
     
-def _init_collection(self):
-    try:
-        self.client.get_collection(self.collection_name)
-        logger.info(f"Collection {self.collection_name} exists")
-    except Exception as e:
-        logger.warning(f"Collection not found or connection error: {e}")
+    def _init_collection(self):
+        """Initialize the collection if it doesn't exist."""
         try:
-            logger.info(f"Creating collection {self.collection_name}")
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=VectorParams(
-                    size=self.vector_size,
-                    distance=Distance.COSINE
+            # Check if collection exists
+            self.client.get_collection(self.collection_name)
+            logger.info(f"Collection {self.collection_name} exists")
+        except Exception as e:
+            logger.warning(f"Collection not found or connection error: {e}")
+            try:
+                logger.info(f"Creating collection {self.collection_name}")
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(
+                        size=self.vector_size,
+                        distance=Distance.COSINE
+                    )
                 )
-            )
-            # Create index
-            self.client.create_payload_index(
-                collection_name=self.collection_name,
-                field_name="document_id",
-                field_type="keyword"
-            )
-        except Exception as create_error:
-            logger.error(f"Failed to create collection: {create_error}")
-            raise
+                # Create payload index for filtering
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name="document_id",
+                    field_type="keyword"
+                )
+                logger.info("Collection created successfully")
+            except Exception as create_error:
+                logger.error(f"Failed to create collection: {create_error}")
+                raise
     
     def upsert_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]]) -> bool:
         if not chunks or not embeddings:
@@ -95,32 +99,14 @@ def _init_collection(self):
             )
         
         try:
-            # Use query_points with query_vector (recommended)
-            if hasattr(self.client, 'query_points'):
-                results = self.client.query_points(
-                    collection_name=self.collection_name,
-                    query=query_vector,
-                    limit=top_k,
-                    query_filter=filter_condition,
-                    with_payload=True
-                ).points
-            elif hasattr(self.client, 'search'):
-                results = self.client.search(
-                    collection_name=self.collection_name,
-                    query_vector=query_vector,
-                    limit=top_k,
-                    query_filter=filter_condition,
-                    with_payload=True
-                )
-            else:
-                # Fallback: try query with query_vector
-                results = self.client.query(
-                    collection_name=self.collection_name,
-                    query_vector=query_vector,
-                    limit=top_k,
-                    query_filter=filter_condition,
-                    with_payload=True
-                )
+            # Use query method (works in recent Qdrant versions)
+            results = self.client.query(
+                collection_name=self.collection_name,
+                query_vector=query_vector,
+                limit=top_k,
+                query_filter=filter_condition,
+                with_payload=True
+            )
             
             retrieved = []
             for result in results:
@@ -166,9 +152,13 @@ def _init_collection(self):
         try:
             collection_info = self.client.get_collection(self.collection_name)
             points_count = getattr(collection_info, 'points_count', 0)
-            return {'points_count': points_count, 'status': 'active'}
+            return {
+                'points_count': points_count,
+                'status': 'active'
+            }
         except Exception as e:
             logger.error(f"Failed to get stats: {e}")
             return {'status': 'error', 'error': str(e)}
 
+# Global instance
 vector_store = VectorStore()
