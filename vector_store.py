@@ -1,4 +1,5 @@
 import uuid
+import logging
 from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -15,50 +16,55 @@ from models import DocumentChunk, RetrievedChunk
 
 class VectorStore:
     def __init__(self):
-        # Connect to Qdrant (cloud or local)
+        logger.info(f"Connecting to Qdrant at {config.QDRANT_URL}")
         self.client = QdrantClient(
             url=config.QDRANT_URL,
             api_key=config.QDRANT_API_KEY,
-            timeout=30
+            timeout=60,
+            prefer_grpc=False
         )
         self.collection_name = config.COLLECTION_NAME
         self.vector_size = config.VECTOR_SIZE
         self._init_collection()
         logger.info(f"VectorStore initialized: {self.collection_name}")
-    
+
     def _init_collection(self):
-        """Initialize the collection if it doesn't exist."""
         try:
             # Check if collection exists
-            self.client.get_collection(self.collection_name)
-            logger.info(f"Collection {self.collection_name} exists")
+            info = self.client.get_collection(self.collection_name)
+            logger.info(f"Collection {self.collection_name} exists with {info.points_count} points")
+            return
         except Exception as e:
-            logger.warning(f"Collection not found or connection error: {e}")
-            try:
-                logger.info(f"Creating collection {self.collection_name}")
-                self.client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=VectorParams(
-                        size=self.vector_size,
-                        distance=Distance.COSINE
-                    )
-                )
-                # Create payload index for filtering
-                self.client.create_payload_index(
-                    collection_name=self.collection_name,
-                    field_name="document_id",
-                    field_type="keyword"
-                )
-                logger.info("Collection created successfully")
-            except Exception as create_error:
-                logger.error(f"Failed to create collection: {create_error}")
-                raise
-    
+            logger.warning(f"Collection check failed: {e}")
+
+        # Try to create the collection
+        try:
+            logger.info(f"Creating collection {self.collection_name} with vector size {self.vector_size}")
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(
+                    size=self.vector_size,
+                    distance=Distance.COSINE
+                ),
+                timeout=60  # ensure the operation doesn't time out
+            )
+            # Create payload index
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="document_id",
+                field_type="keyword"
+            )
+            logger.info("Collection created successfully")
+        except Exception as e:
+            logger.error(f"Failed to create collection: {e}")
+            # Re-raise with more context
+            raise RuntimeError(f"Qdrant collection creation failed: {e}") from e
+
     def upsert_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]]) -> bool:
         if not chunks or not embeddings:
             logger.warning("No chunks or embeddings to upsert")
             return False
-        
+
         points = []
         for chunk, embedding in zip(chunks, embeddings):
             point_id = str(uuid.uuid4())
@@ -75,18 +81,19 @@ class VectorStore:
                 }
             )
             points.append(point)
-        
+
         try:
             self.client.upsert(
                 collection_name=self.collection_name,
-                points=points
+                points=points,
+                timeout=60
             )
             logger.info(f"Upserted {len(points)} chunks")
             return True
         except Exception as e:
             logger.error(f"Failed to upsert chunks: {e}")
             return False
-    
+
     def search(self, query_vector: List[float], top_k: int = 5,
                filter_doc_id: Optional[str] = None) -> List[RetrievedChunk]:
         filter_condition = None
@@ -97,17 +104,17 @@ class VectorStore:
                     match=MatchValue(value=filter_doc_id)
                 )]
             )
-        
+
         try:
-            # Use query method (works in recent Qdrant versions)
             results = self.client.query(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 limit=top_k,
                 query_filter=filter_condition,
-                with_payload=True
+                with_payload=True,
+                timeout=60
             )
-            
+
             retrieved = []
             for result in results:
                 chunk = DocumentChunk(
@@ -129,7 +136,7 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return []
-    
+
     def delete_document(self, document_id: str) -> bool:
         try:
             filter_condition = Filter(
@@ -140,14 +147,15 @@ class VectorStore:
             )
             self.client.delete(
                 collection_name=self.collection_name,
-                points_selector=filter_condition
+                points_selector=filter_condition,
+                timeout=60
             )
             logger.info(f"Deleted document: {document_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to delete document: {e}")
             return False
-    
+
     def get_stats(self) -> Dict[str, Any]:
         try:
             collection_info = self.client.get_collection(self.collection_name)
