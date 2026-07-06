@@ -89,13 +89,13 @@ with tab1:
                         for note in response.verification_notes:
                             st.write(f"- {note}")
                 
-                # Citations
+                # Citations - UPDATED: use attribute access, not .get()
                 if response.citations:
                     st.subheader("📚 Sources")
                     for i, citation in enumerate(response.citations, 1):
-                        with st.expander(f"Source {i} (Similarity: {citation.get('similarity', 0):.2f})"):
-                            st.write(citation.get('text', ''))
-                            st.caption(f"Source: {citation.get('source', 'unknown')}")
+                        with st.expander(f"Source {i} (Similarity: {citation.similarity:.2f})"):
+                            st.write(citation.text)
+                            st.caption(f"Source: {citation.source}")
                 
                 # Raw chunks
                 if response.source_chunks:

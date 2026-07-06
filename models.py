@@ -47,10 +47,17 @@ class SearchResult(BaseModel):
     total_results: int
     processing_time_ms: float
 
+from typing import Union
+
+class Citation(BaseModel):
+    text: str
+    source: str
+    similarity: float
+
 class AnswerResponse(BaseModel):
     query: str
     answer: str
-    citations: List[Dict[str, str]]
+    citations: List[Citation]
     confidence_score: float
     grounded: bool
     verification_notes: List[str]

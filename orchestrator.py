@@ -4,8 +4,8 @@ from typing import List, Dict, Any
 from openai import OpenAI
 from config import config
 from logger import logger
-from models import AnswerResponse
-from agents.query_agent import query_agent, QueryAnalysis
+from models import AnswerResponse, Citation  # <-- Added Citation import
+from agents.query_agent import query_agent
 from agents.retrieval_agent import retrieval_agent
 from agents.verification_agent import verification_agent
 
@@ -46,16 +46,18 @@ class KnowledgeOrchestrator:
         # Step 4: Verify and add citations
         verification = verification_agent.verify(question, answer, chunks)
         
-        # Build citations
+        # Build citations using the Citation model (not dictionaries)
         citations = []
-        for citation in verification.get('citations', []):
-            idx = citation.get('source_index', 0) - 1
+        for citation_data in verification.get('citations', []):
+            idx = citation_data.get('source_index', 0) - 1
             if 0 <= idx < len(chunks):
-                citations.append({
-                    'text': chunks[idx].chunk.content[:200] + "...",
-                    'source': chunks[idx].source,
-                    'similarity': chunks[idx].similarity_score
-                })
+                citations.append(
+                    Citation(
+                        text=chunks[idx].chunk.content[:200] + "...",
+                        source=chunks[idx].source,
+                        similarity=chunks[idx].similarity_score
+                    )
+                )
         
         processing_time = (time.time() - start_time) * 1000
         
